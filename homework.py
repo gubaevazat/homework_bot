@@ -4,15 +4,11 @@ import logging
 import os
 import sys
 import time
-from logging import Formatter, StreamHandler
-
-from dotenv import load_dotenv
-
-from exeptions import NoEnvironmentVarError
+from logging.handlers import RotatingFileHandler
 
 import requests
-
 import telegram
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -31,44 +27,38 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-
-def get_logger(name):
-    """Функция возвращает экземпляр логгера."""
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    handler = StreamHandler(stream=sys.stdout)
-    handler.setFormatter(Formatter(
-        '%(asctime)s [%(levelname)s] %(message)s, %(funcName)s'
-    ))
-    logger.addHandler(handler)
-    return logger
-
-
-logger = get_logger(__name__)
+file_handler = RotatingFileHandler(
+    'homework_bot.log',
+    maxBytes=50000000,
+    backupCount=5,
+    encoding='utf8'
+)
+stream_handler = logging.StreamHandler(stream=sys.stdout)
+logging.basicConfig(
+    level=logging.ERROR,
+    format='%(asctime)s [%(levelname)s] %(message)s, %(funcName)s',
+    handlers=(file_handler, stream_handler)
+)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 def check_tokens():
     """Проверка переменных окружения."""
-    tokens = {
-        'Яндекс-практикум токен': PRACTICUM_TOKEN,
-        'Телеграмм токен': TELEGRAM_TOKEN,
-        'Телеграмм chat_id': TELEGRAM_CHAT_ID,
-    }
-    for name, token in tokens.items():
-        if token is None:
-            logger.critical(
-                f'Отсутствует переменная - {name}, бот завершает работу!'
-            )
-            raise NoEnvironmentVarError
+    if all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
+        return True
+    logger.critical('Отсутствует переменные окружения, бот завершает работу!')
+    return False
 
 
 def send_message(bot, message):
     """Отправка сообщения в чат."""
+    logger.debug(f'Отправляется сообщение: {message}')
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
-        logger.debug('Отправлено сообщение.')
+        logger.debug('Сообщение оправлено.')
     except telegram.error.TelegramError as error:
-        logger.error(f'Ошибка отпрвки сообщения: {error}')
+        logger.error(f'Ошибка отправки сообщения: {error}')
 
 
 def get_api_answer(timestamp):
@@ -80,16 +70,32 @@ def get_api_answer(timestamp):
             params={'from_date': timestamp}
         )
         if response.status_code != http.HTTPStatus.OK:
-            raise ConnectionError(
-                f'Ошибка соединения код-{response.status_code}'
-            )
-        return response.json()
+            template = """
+                Ошибка соединения!!!
+                Заголовки ответа сервера: {headers}.
+                Контент запрашиваемой страницы: {text}.
+                Заголовки запроса: {request_headers}.
+                Метод запроса: {request_method}.
+            """
+            raise ConnectionError(template.format(
+                headers=response.headers,
+                text=response.text,
+                request_headers=response.request.headers,
+                request_method=response.request.method
+            ))
     except requests.RequestException('Ошибка запроса к API!'):
-        raise
+        raise requests.RequestException('Ошибка запроса к API!')
     except json.JSONDecodeError:
-        raise
-    except Exception:
-        raise
+        raise json.JSONDecodeError(
+            'Ошибка декодирования файла json ответа API!'
+        )
+    return response.json()
+# Сорян за коммент в коде для ревью, в пачке не смог связаться
+# Хочу до НГ управиться, вот и тороплюсь
+# # Куратор поможет, но пока не ответил, в пачке подробно напишу мысли
+# Тут только одно, без сообщения в
+# except requests.RequestException('Ошибка запроса к API!'):
+# Не проходят pytest не понимаю почему))
 
 
 def check_response(response):
@@ -102,15 +108,17 @@ def check_response(response):
         raise KeyError('В ответе API отсутствует ключ current_date!')
     if not isinstance(response['homeworks'], list):
         raise TypeError('По ключу homeworks должен быть список!')
-    if response['homeworks'] == []:
+    if len(response['homeworks']) == 0:
         return False
     return True
 
 
 def parse_status(homework):
     """Возврат информации о статусе домашней работы."""
-    if 'homework_name' not in homework or 'status' not in homework:
-        raise KeyError('Отсутствую необходимы ключи в ответе API!')
+    if 'homework_name' not in homework:
+        raise KeyError('Отсутствует ключ homework_name в ответе API!')
+    if 'status' not in homework:
+        raise KeyError('Отсутствует ключ status в ответе API!')
     homework_status = homework['status']
     if homework_status not in HOMEWORK_VERDICTS:
         raise KeyError('Несуществующий статус домашней работы!')
@@ -121,7 +129,8 @@ def parse_status(homework):
 
 def main():
     """Основная логика работы бота."""
-    check_tokens()
+    if not check_tokens():
+        sys.exit()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     status = None
     message = None
