@@ -47,7 +47,6 @@ def check_tokens():
     """Проверка переменных окружения."""
     if all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
         return True
-    logger.critical('Отсутствует переменные окружения, бот завершает работу!')
     return False
 
 
@@ -70,32 +69,26 @@ def get_api_answer(timestamp):
             params={'from_date': timestamp}
         )
         if response.status_code != http.HTTPStatus.OK:
-            template = """
-                Ошибка соединения!!!
-                Заголовки ответа сервера: {headers}.
-                Контент запрашиваемой страницы: {text}.
-                Заголовки запроса: {request_headers}.
-                Метод запроса: {request_method}.
-            """
+            template = (
+                'Ошибка соединения!!! '
+                'Заголовки ответа сервера: {headers}. '
+                'Контент запрашиваемой страницы: {text}. '
+                'Заголовки запроса: {request_headers}. '
+                'Метод запроса: {request_method}. '
+            )
             raise ConnectionError(template.format(
                 headers=response.headers,
                 text=response.text,
                 request_headers=response.request.headers,
                 request_method=response.request.method
             ))
-    except requests.RequestException('Ошибка запроса к API!'):
-        raise requests.RequestException('Ошибка запроса к API!')
-    except json.JSONDecodeError:
-        raise json.JSONDecodeError(
+    except requests.RequestException as error:
+        raise error('Ошибка запроса к API!')
+    except json.JSONDecodeError as error:
+        raise error(
             'Ошибка декодирования файла json ответа API!'
         )
     return response.json()
-# Сорян за коммент в коде для ревью, в пачке не смог связаться
-# Хочу до НГ управиться, вот и тороплюсь
-# # Куратор поможет, но пока не ответил, в пачке подробно напишу мысли
-# Тут только одно, без сообщения в
-# except requests.RequestException('Ошибка запроса к API!'):
-# Не проходят pytest не понимаю почему))
 
 
 def check_response(response):
@@ -130,6 +123,9 @@ def parse_status(homework):
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
+        logger.critical(
+            'Отсутствует переменные окружения, бот завершает работу!'
+        )
         sys.exit()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     status = None
