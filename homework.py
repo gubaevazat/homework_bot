@@ -45,9 +45,7 @@ logger.setLevel(logging.DEBUG)
 
 def check_tokens():
     """Проверка переменных окружения."""
-    if all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
-        return True
-    return False
+    return all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID])
 
 
 def send_message(bot, message):
@@ -126,7 +124,7 @@ def main():
         logger.critical(
             'Отсутствует переменные окружения, бот завершает работу!'
         )
-        sys.exit()
+        sys.exit('Отсутствует переменные окружения, бот завершает работу!')
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     status = None
     message = None
